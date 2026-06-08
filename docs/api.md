@@ -9,10 +9,21 @@ Base path: `/api`
 
 ## Market Data
 
-- `GET /api/btc/history?limit=365`
+- `GET /api/btc/history?limit=365&bar=1H`
 - `GET /api/market/overview`
 - `GET /api/macro`
 - `GET /api/sentiment`
+
+Supported `bar` values for OKX K-line requests include:
+
+- `1m`
+- `5m`
+- `15m`
+- `1H`
+- `4H`
+- `1D`
+- `1W`
+- `1M`
 
 ## Factor Analysis
 
@@ -39,6 +50,13 @@ Base path: `/api`
 - `POST /api/train`
 - Body: same as above
 - `GET /api/model-performance?symbol=BTC&horizon_days=7`
+
+## Live Ingestion
+
+- `POST /api/ingest/live`
+- `GET /api/live/okx/ticker`
+
+These endpoints pull live OKX market data into the database and optionally ingest X / Reddit search results when the required credentials are configured.
 
 ## Response fields
 

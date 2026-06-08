@@ -1,97 +1,216 @@
 <template>
   <div class="shell">
-    <header class="hero">
-      <div>
-        <div class="eyebrow">CryptoSight</div>
-        <h1>Financial Big Data-Driven Crypto Analysis & Prediction</h1>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">CryptoSight / BTC Market Terminal</div>
+        <h1>BTC Market Terminal</h1>
         <p>
-          BTC market overview, macro factors, sentiment signals, and model comparison in one dark financial dashboard.
+          Switch between minute, hour, day, week, and month K-lines. Inspect candlesticks, volume, MA, MACD, RSI,
+          and the factor-analysis stack in one unified view.
         </p>
+        <div class="hero-badges">
+          <span class="badge">Live OKX candles</span>
+          <span class="badge">Social sentiment pipeline</span>
+          <span class="badge">Model comparison</span>
+        </div>
       </div>
-      <el-card class="status-card" shadow="never">
-        <div class="status-grid">
-          <div>
-            <div class="status-label">Current BTC</div>
-            <div class="status-value">{{ formatPrice(overview?.current_price) }}</div>
-          </div>
-          <div>
-            <div class="status-label">24h Change</div>
-            <div class="status-value" :class="changeClass">{{ formatChange(overview?.change_24h) }}</div>
-          </div>
-          <div>
-            <div class="status-label">Volume</div>
-            <div class="status-value">{{ formatNumber(overview?.volume_24h) }}</div>
-          </div>
-        </div>
-      </el-card>
-    </header>
 
-    <main class="grid">
-      <section class="panel panel-wide">
-        <div class="panel-head">
-          <h2>Price Trend</h2>
-          <span>{{ overview?.as_of ?? 'Loading...' }}</span>
+      <div class="hero-stats">
+        <div class="stat-card">
+          <span>BTC Price</span>
+          <strong>{{ formatPrice(overview?.current_price ?? latestClose) }}</strong>
         </div>
-        <div ref="trendEl" class="chart"></div>
+        <div class="stat-card">
+          <span>24h Change</span>
+          <strong :class="changeClass">{{ formatChange(overview?.change_24h) }}</strong>
+        </div>
+        <div class="stat-card">
+          <span>24h Volume</span>
+          <strong>{{ formatVolume(overview?.volume_24h ?? latestVolume) }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <main class="workspace">
+      <section class="panel chart-panel">
+        <div class="panel-head chart-head">
+          <div>
+            <h2>BTC/USDT Chart</h2>
+            <div class="subline">
+              {{ selectedIntervalLabel }} · {{ chartTypeLabel }} · {{ indicatorLabel }}
+            </div>
+          </div>
+
+          <div class="chart-actions">
+            <div class="interval-group">
+              <button
+                v-for="item in intervalOptions"
+                :key="item.value"
+                class="interval-btn"
+                :class="{ active: selectedInterval === item.value }"
+                @click="selectedInterval = item.value"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+
+            <el-radio-group v-model="chartMode" size="small" class="mode-group">
+              <el-radio-button label="candlestick">K-line</el-radio-button>
+              <el-radio-button label="line">Line</el-radio-button>
+            </el-radio-group>
+
+            <el-radio-group v-model="indicatorMode" size="small" class="mode-group">
+              <el-radio-button label="macd">MACD</el-radio-button>
+              <el-radio-button label="rsi">RSI</el-radio-button>
+            </el-radio-group>
+          </div>
+        </div>
+
+        <div class="chart-summary">
+          <div class="summary-chip">
+            <span>Open</span>
+            <strong>{{ formatPrice(latestCandle?.open) }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span>High</span>
+            <strong>{{ formatPrice(latestCandle?.high) }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span>Low</span>
+            <strong>{{ formatPrice(latestCandle?.low) }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span>Close</span>
+            <strong :class="priceDirectionClass">{{ formatPrice(latestCandle?.close) }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span>Volume</span>
+            <strong>{{ formatVolume(latestCandle?.volume) }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span>As Of</span>
+            <strong>{{ latestTimestamp }}</strong>
+          </div>
+        </div>
+
+        <div ref="trendEl" v-loading="loadingHistory" class="trend-chart"></div>
       </section>
 
-      <section class="panel">
+      <aside class="panel side-panel">
         <div class="panel-head">
-          <h2>Prediction Center</h2>
-          <span>Live API</span>
+          <h2>Market Snapshot</h2>
+          <span>Live feed</span>
         </div>
-        <div class="controls">
-          <el-select v-model="modelName" class="control" placeholder="Select model">
-            <el-option label="XGBoost" value="xgboost" />
-            <el-option label="Random Forest" value="random_forest" />
-            <el-option label="ARIMA" value="arima" />
-            <el-option label="Prophet" value="prophet" />
-            <el-option label="LSTM" value="lstm" />
-          </el-select>
-          <el-select v-model="horizonDays" class="control" placeholder="Horizon">
-            <el-option label="1 Day" :value="1" />
-            <el-option label="3 Days" :value="3" />
-            <el-option label="7 Days" :value="7" />
-            <el-option label="30 Days" :value="30" />
-          </el-select>
-          <el-button type="primary" :loading="predicting" @click="runPrediction">Predict</el-button>
+
+        <div class="snapshot-grid">
+          <div class="snapshot-item">
+            <span>Interval</span>
+            <strong>{{ selectedIntervalLabel }}</strong>
+          </div>
+          <div class="snapshot-item">
+            <span>Bars</span>
+            <strong>{{ history.length }}</strong>
+          </div>
+          <div class="snapshot-item">
+            <span>Trend</span>
+            <strong :class="priceDirectionClass">{{ priceDirectionText }}</strong>
+          </div>
+          <div class="snapshot-item">
+            <span>Confidence</span>
+            <strong>{{ prediction ? `${(prediction.confidence_score * 100).toFixed(2)}%` : '--' }}</strong>
+          </div>
         </div>
-        <div v-if="prediction" class="prediction-box">
-          <div class="prediction-price">{{ formatPrice(prediction.predicted_price) }}</div>
-          <div class="prediction-meta">{{ prediction.model_name }} · {{ prediction.horizon_days }} day horizon</div>
-          <div class="prediction-meta">Confidence: {{ (prediction.confidence_score * 100).toFixed(2) }}%</div>
-          <div class="metrics">
-            <div v-for="(value, key) in prediction.metrics" :key="key" class="metric-item">
-              <span>{{ key.toUpperCase() }}</span>
-              <strong>{{ value.toFixed(4) }}</strong>
+
+        <div class="mini-metrics">
+          <div class="metric-row">
+            <span>Latest Close</span>
+            <strong>{{ formatPrice(latestClose) }}</strong>
+          </div>
+          <div class="metric-row">
+            <span>Average Volume</span>
+            <strong>{{ formatVolume(averageVolume) }}</strong>
+          </div>
+          <div class="metric-row">
+            <span>High / Low</span>
+            <strong>{{ formatPrice(highestHigh) }} / {{ formatPrice(lowestLow) }}</strong>
+          </div>
+          <div class="metric-row">
+            <span>Model</span>
+            <strong>{{ prediction?.model_name ?? 'xgboost' }}</strong>
+          </div>
+        </div>
+
+        <div class="panel-inner">
+          <div class="panel-head compact">
+            <h3>Prediction Center</h3>
+            <span>API-backed</span>
+          </div>
+          <div class="controls">
+            <el-select v-model="modelName" class="control" placeholder="Model">
+              <el-option label="XGBoost" value="xgboost" />
+              <el-option label="Random Forest" value="random_forest" />
+              <el-option label="ARIMA" value="arima" />
+              <el-option label="Prophet" value="prophet" />
+              <el-option label="LSTM" value="lstm" />
+            </el-select>
+            <el-select v-model="horizonDays" class="control" placeholder="Horizon">
+              <el-option label="1 Day" :value="1" />
+              <el-option label="3 Days" :value="3" />
+              <el-option label="7 Days" :value="7" />
+              <el-option label="30 Days" :value="30" />
+            </el-select>
+            <el-button type="primary" class="predict-btn" :loading="predicting" @click="runPrediction">
+              Predict
+            </el-button>
+          </div>
+
+          <div v-if="prediction" class="prediction-box">
+            <div class="prediction-price">{{ formatPrice(prediction.predicted_price) }}</div>
+            <div class="prediction-meta">{{ prediction.model_name }} · {{ prediction.horizon_days }} day horizon</div>
+            <div class="prediction-meta">Confidence: {{ (prediction.confidence_score * 100).toFixed(2) }}%</div>
+            <div class="metrics">
+              <div v-for="(value, key) in prediction.metrics" :key="key" class="metric-item">
+                <span>{{ key.toUpperCase() }}</span>
+                <strong>{{ value.toFixed(4) }}</strong>
+              </div>
             </div>
           </div>
         </div>
-      </section>
+      </aside>
 
-      <section class="panel">
+      <section class="panel panel-wide">
         <div class="panel-head">
-          <h2>Feature Importance</h2>
-          <span>Random Forest</span>
+          <h2>Factor Analysis</h2>
+          <span>Correlation · Feature importance · SHAP</span>
         </div>
-        <div ref="featureEl" class="chart small-chart"></div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h2>Macro + Sentiment</h2>
-          <span>Factor Snapshot</span>
-        </div>
-        <div class="mini-grid">
-          <div class="mini-card" v-for="item in macroHighlights" :key="item.label">
-            <span>{{ item.label }}</span>
-            <strong>{{ item.value }}</strong>
+        <div class="factor-grid">
+          <div class="factor-card">
+            <h3>Top Factors</h3>
+            <div class="rank-list">
+              <div v-for="item in topFactors" :key="item.feature" class="rank-item">
+                <span>#{{ item.rank }}</span>
+                <strong>{{ item.feature }}</strong>
+                <em>{{ item.importance.toFixed(4) }}</em>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="mini-grid sentiment-grid">
-          <div class="mini-card" v-for="item in sentimentHighlights" :key="item.label">
-            <span>{{ item.label }}</span>
-            <strong>{{ item.value }}</strong>
+          <div class="factor-card">
+            <h3>Macro Signals</h3>
+            <div class="mini-grid two-col">
+              <div class="mini-card" v-for="item in macroHighlights" :key="item.label">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
+          </div>
+          <div class="factor-card">
+            <h3>Sentiment Signals</h3>
+            <div class="mini-grid two-col">
+              <div class="mini-card" v-for="item in sentimentHighlights" :key="item.label">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -102,8 +221,8 @@
           <span>Thesis-ready outputs</span>
         </div>
         <el-alert
-          title="Use the API outputs to export figures for the thesis: correlation heatmaps, feature ranking charts, and model comparison tables."
-          type="info"
+          title="The trading chart now supports real interval switching, candlesticks, MA, volume, MACD, and RSI."
+          type="success"
           :closable="false"
           show-icon
         />
@@ -113,8 +232,8 @@
             <p>Which factors most strongly affect cryptocurrency prices, and does multi-source data improve prediction accuracy?</p>
           </div>
           <div>
-            <strong>Suggested next step</strong>
-            <p>Replace demo seeding with real Binance/FRED/sentiment collectors and persist model results back into MySQL.</p>
+            <strong>Next expansion</strong>
+            <p>Connect additional pairs like ETH/USDT and add order-book depth, support/resistance, and signal annotations.</p>
           </div>
         </div>
       </section>
@@ -123,38 +242,77 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
 import { fetchFactors, fetchHistory, fetchOverview, predict } from './api'
 import type { FactorPayload, HistoryPoint, MarketOverview, PredictionResponse } from './types'
 
+type IntervalKey = '1m' | '5m' | '15m' | '1H' | '4H' | '1D' | '1W' | '1M'
+type ChartMode = 'candlestick' | 'line'
+type IndicatorMode = 'macd' | 'rsi'
+
+const intervalOptions: Array<{ label: string; value: IntervalKey; limit: number }> = [
+  { label: '1m', value: '1m', limit: 300 },
+  { label: '5m', value: '5m', limit: 300 },
+  { label: '15m', value: '15m', limit: 300 },
+  { label: '1H', value: '1H', limit: 240 },
+  { label: '4H', value: '4H', limit: 240 },
+  { label: '1D', value: '1D', limit: 240 },
+  { label: '1W', value: '1W', limit: 180 },
+  { label: '1M', value: '1M', limit: 120 },
+]
+
 const overview = ref<MarketOverview | null>(null)
 const history = ref<HistoryPoint[]>([])
 const factors = ref<FactorPayload | null>(null)
 const prediction = ref<PredictionResponse | null>(null)
+const selectedInterval = ref<IntervalKey>('1H')
+const chartMode = ref<ChartMode>('candlestick')
+const indicatorMode = ref<IndicatorMode>('macd')
 const modelName = ref('xgboost')
 const horizonDays = ref(7)
+const loadingHistory = ref(false)
 const predicting = ref(false)
 
 const trendEl = ref<HTMLDivElement | null>(null)
-const featureEl = ref<HTMLDivElement | null>(null)
 let trendChart: echarts.ECharts | null = null
-let featureChart: echarts.ECharts | null = null
 
 const changeClass = computed(() => {
   const change = overview.value?.change_24h ?? 0
   return change >= 0 ? 'positive' : 'negative'
 })
 
+const latestCandle = computed(() => history.value.at(-1) ?? null)
+const previousCandle = computed(() => history.value.length > 1 ? history.value.at(-2) ?? null : null)
+const latestClose = computed(() => latestCandle.value?.close ?? 0)
+const latestVolume = computed(() => latestCandle.value?.volume ?? 0)
+const latestTimestamp = computed(() => latestCandle.value?.ts ? formatDateTime(latestCandle.value.ts) : '--')
+const highestHigh = computed(() => history.value.length ? Math.max(...history.value.map((item) => item.high)) : 0)
+const lowestLow = computed(() => history.value.length ? Math.min(...history.value.map((item) => item.low)) : 0)
+const averageVolume = computed(() => history.value.length ? history.value.reduce((sum, item) => sum + item.volume, 0) / history.value.length : 0)
+const priceDirectionClass = computed(() => {
+  if (!latestCandle.value || !previousCandle.value) return ''
+  return latestCandle.value.close >= previousCandle.value.close ? 'positive' : 'negative'
+})
+const priceDirectionText = computed(() => {
+  if (!latestCandle.value || !previousCandle.value) return '--'
+  return latestCandle.value.close >= previousCandle.value.close ? 'Bullish' : 'Bearish'
+})
+const selectedIntervalLabel = computed(() => intervalOptions.find((item) => item.value === selectedInterval.value)?.label ?? selectedInterval.value)
+const chartTypeLabel = computed(() => chartMode.value === 'candlestick' ? 'Candles' : 'Line')
+const indicatorLabel = computed(() => indicatorMode.value.toUpperCase())
+
+const topFactors = computed(() => factors.value?.feature_importance?.slice(0, 8) ?? [])
+
 const macroHighlights = computed(() => {
   const items = history.value.slice(-4)
   if (items.length === 0) return []
   return [
     { label: 'Latest Close', value: formatPrice(items.at(-1)?.close) },
-    { label: '7D Avg Volume', value: formatNumber(avg(items.map((item) => item.volume))) },
-    { label: '7D High', value: formatPrice(Math.max(...items.map((item) => item.high))) },
-    { label: '7D Low', value: formatPrice(Math.min(...items.map((item) => item.low))) },
+    { label: 'Avg Volume', value: formatVolume(avg(items.map((item) => item.volume))) },
+    { label: '7-bar High', value: formatPrice(Math.max(...items.map((item) => item.high))) },
+    { label: '7-bar Low', value: formatPrice(Math.min(...items.map((item) => item.low))) },
   ]
 })
 
@@ -180,6 +338,11 @@ function formatNumber(value?: number | null) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
 }
 
+function formatVolume(value?: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '--'
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)
+}
+
 function formatPrice(value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) return '--'
   return `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}`
@@ -191,78 +354,371 @@ function formatChange(value?: number | null) {
   return `${sign}${value.toFixed(2)}%`
 }
 
+function formatDateTime(value: string) {
+  const date = new Date(value)
+  return new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
 function avg(values: number[]) {
   if (!values.length) return 0
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
+function limitForInterval(interval: IntervalKey) {
+  return intervalOptions.find((item) => item.value === interval)?.limit ?? 240
+}
+
+function calcMA(values: number[], period: number) {
+  return values.map((_, index) => {
+    if (index < period - 1) return '-'
+    const slice = values.slice(index - period + 1, index + 1)
+    return avg(slice).toFixed(2)
+  })
+}
+
+function calcEMA(values: number[], period: number) {
+  const k = 2 / (period + 1)
+  const result: number[] = []
+  let prev = values[0] ?? 0
+  values.forEach((value, index) => {
+    if (index === 0) {
+      prev = value
+      result.push(value)
+      return
+    }
+    const ema = value * k + prev * (1 - k)
+    result.push(ema)
+    prev = ema
+  })
+  return result
+}
+
+function calcBoll(values: number[], period = 20) {
+  return values.map((_, index) => {
+    if (index < period - 1) return { upper: '-', mid: '-', lower: '-' }
+    const slice = values.slice(index - period + 1, index + 1)
+    const mid = avg(slice)
+    const variance = avg(slice.map((value) => (value - mid) ** 2))
+    const std = Math.sqrt(variance)
+    return {
+      upper: (mid + 2 * std).toFixed(2),
+      mid: mid.toFixed(2),
+      lower: (mid - 2 * std).toFixed(2),
+    }
+  })
+}
+
+function calcMACD(values: number[]) {
+  const ema12 = calcEMA(values, 12)
+  const ema26 = calcEMA(values, 26)
+  const dif = values.map((_, index) => (ema12[index] ?? 0) - (ema26[index] ?? 0))
+  const dea = calcEMA(dif, 9)
+  const macd = dif.map((value, index) => (value - (dea[index] ?? 0)) * 2)
+  return { dif, dea, macd }
+}
+
+function calcRSI(values: number[], period = 14) {
+  const result: Array<number | '-'> = []
+  result.push('-')
+  let gains = 0
+  let losses = 0
+  for (let i = 1; i < values.length; i += 1) {
+    const diff = values[i] - values[i - 1]
+    if (diff >= 0) gains += diff
+    else losses += Math.abs(diff)
+
+    if (i < period) {
+      result.push('-')
+      continue
+    }
+
+    if (i > period) {
+      const prevDiff = values[i - period + 1] - values[i - period]
+      if (prevDiff >= 0) gains -= prevDiff
+      else losses -= Math.abs(prevDiff)
+    }
+
+    const avgGain = gains / period
+    const avgLoss = losses / period
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss
+    const rsi = 100 - 100 / (1 + rs)
+    result.push(Number.isFinite(rsi) ? Number(rsi.toFixed(2)) : '-')
+  }
+  while (result.length < values.length) result.unshift('-')
+  return result
+}
+
+function formatXAxisLabel(value: string) {
+  const date = new Date(value)
+  if (selectedInterval.value === '1m' || selectedInterval.value === '5m' || selectedInterval.value === '15m' || selectedInterval.value === '1H' || selectedInterval.value === '4H') {
+    return new Intl.DateTimeFormat('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date)
+  }
+  return new Intl.DateTimeFormat('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 function renderTrendChart() {
   if (!trendEl.value || history.value.length === 0) return
+
+  const closes = history.value.map((item) => item.close)
+  const categories = history.value.map((item) => item.ts)
+  const candleData = history.value.map((item) => [item.open, item.close, item.low, item.high])
+  const volumeData = history.value.map((item) => ({
+    value: item.volume,
+    itemStyle: {
+      color: item.close >= item.open ? '#00c087' : '#f6465d',
+    },
+  }))
+
+  const ma5 = calcMA(closes, 5)
+  const ma10 = calcMA(closes, 10)
+  const ma20 = calcMA(closes, 20)
+  const ma60 = calcMA(closes, 60)
+  const boll = calcBoll(closes, 20)
+  const macd = calcMACD(closes)
+  const rsi = calcRSI(closes, 14)
+
   trendChart ??= echarts.init(trendEl.value)
   trendChart.setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis' },
-    grid: { left: 48, right: 24, top: 40, bottom: 40 },
-    xAxis: { type: 'category', data: history.value.map((item) => item.ts.slice(0, 10)), axisLine: { lineStyle: { color: '#3c4a63' } } },
-    yAxis: { type: 'value', scale: true, axisLine: { lineStyle: { color: '#3c4a63' } }, splitLine: { lineStyle: { color: '#1b263b' } } },
-    series: [
+    animation: false,
+    legend: {
+      top: 8,
+      left: 8,
+      textStyle: { color: '#9fb1cc' },
+      data: ['Price', 'MA5', 'MA10', 'MA20', 'MA60', 'BOLL U', 'BOLL M', 'BOLL L', 'Volume', 'MACD', 'Signal', 'RSI'],
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      backgroundColor: 'rgba(8, 14, 26, 0.96)',
+      borderColor: '#24304a',
+      textStyle: { color: '#e8eefc' },
+      formatter: (params: any[]) => {
+        const idx = params?.[0]?.dataIndex ?? 0
+        const row = history.value[idx]
+        if (!row) return ''
+        const pieces = [
+          `<div style="margin-bottom:8px;font-weight:700">${formatXAxisLabel(row.ts)}</div>`,
+          `<div>Open: ${formatPrice(row.open)}</div>`,
+          `<div>High: ${formatPrice(row.high)}</div>`,
+          `<div>Low: ${formatPrice(row.low)}</div>`,
+          `<div>Close: ${formatPrice(row.close)}</div>`,
+          `<div>Volume: ${formatVolume(row.volume)}</div>`,
+        ]
+        if (indicatorMode.value === 'macd') {
+          pieces.push(`<div>MACD: ${(macd.macd[idx] ?? 0).toFixed(2)}</div>`, `<div>DIF: ${(macd.dif[idx] ?? 0).toFixed(2)}</div>`, `<div>DEA: ${(macd.dea[idx] ?? 0).toFixed(2)}</div>`)
+        } else {
+          pieces.push(`<div>RSI: ${(rsi[idx] ?? '-').toString()}</div>`)
+        }
+        return pieces.join('')
+      },
+    },
+    axisPointer: {
+      link: [{ xAxisIndex: [0, 1, 2] }],
+      label: { backgroundColor: '#5b6b85' },
+    },
+    grid: [
+      { left: 60, right: 28, top: 64, height: '48%' },
+      { left: 60, right: 28, top: '66%', height: '14%' },
+      { left: 60, right: 28, top: '82%', height: '12%' },
+    ],
+    xAxis: [
       {
-        name: 'Close',
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        data: history.value.map((item) => item.close),
-        lineStyle: { width: 3, color: '#56cfe1' },
-        areaStyle: { color: 'rgba(86, 207, 225, 0.12)' },
+        type: 'category',
+        data: categories,
+        boundaryGap: true,
+        axisLine: { lineStyle: { color: '#30415f' } },
+        axisLabel: {
+          color: '#7e90aa',
+          formatter: formatXAxisLabel,
+        },
+        axisTick: { show: false },
+        splitLine: { show: false },
       },
       {
-        name: 'MA 7',
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        data: history.value.map((_, index, arr) => {
-          const start = Math.max(0, index - 6)
-          const slice = arr.slice(start, index + 1).map((item) => item.close)
-          return avg(slice)
-        }),
-        lineStyle: { width: 2, color: '#f7b267' },
+        type: 'category',
+        gridIndex: 1,
+        data: categories,
+        boundaryGap: true,
+        axisLine: { lineStyle: { color: '#30415f' } },
+        axisLabel: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
+      },
+      {
+        type: 'category',
+        gridIndex: 2,
+        data: categories,
+        boundaryGap: true,
+        axisLine: { lineStyle: { color: '#30415f' } },
+        axisLabel: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
       },
     ],
-  })
-}
-
-function renderFeatureChart() {
-  if (!featureEl.value || !factors.value?.feature_importance?.length) return
-  featureChart ??= echarts.init(featureEl.value)
-  const top = factors.value.feature_importance.slice(0, 8).reverse()
-  featureChart.setOption({
-    backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 110, right: 24, top: 20, bottom: 16 },
-    xAxis: { type: 'value', axisLine: { lineStyle: { color: '#3c4a63' } }, splitLine: { lineStyle: { color: '#1b263b' } } },
-    yAxis: { type: 'category', data: top.map((item) => item.feature), axisLine: { lineStyle: { color: '#3c4a63' } } },
-    series: [
+    yAxis: [
       {
+        scale: true,
+        axisLine: { lineStyle: { color: '#30415f' } },
+        axisLabel: { color: '#7e90aa' },
+        splitLine: { lineStyle: { color: '#1a2437' } },
+      },
+      {
+        scale: true,
+        gridIndex: 1,
+        axisLine: { lineStyle: { color: '#30415f' } },
+        axisLabel: { color: '#7e90aa' },
+        splitLine: { show: false },
+      },
+      {
+        scale: true,
+        gridIndex: 2,
+        axisLine: { lineStyle: { color: '#30415f' } },
+        axisLabel: { color: '#7e90aa' },
+        splitLine: { lineStyle: { color: '#1a2437' } },
+      },
+    ],
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0, 1, 2], start: 40, end: 100 },
+      { type: 'slider', xAxisIndex: [0, 1, 2], bottom: 8, height: 20, borderColor: '#24304a', backgroundColor: 'rgba(255,255,255,0.03)', textStyle: { color: '#7e90aa' } },
+    ],
+    series: [
+      ...(chartMode.value === 'candlestick'
+        ? [
+            {
+              name: 'Price',
+              type: 'candlestick',
+              data: candleData,
+              itemStyle: {
+                color: '#00c087',
+                color0: '#f6465d',
+                borderColor: '#00c087',
+                borderColor0: '#f6465d',
+              },
+            },
+          ]
+        : [
+            {
+              name: 'Price',
+              type: 'line',
+              data: closes,
+              smooth: true,
+              showSymbol: false,
+              lineStyle: { width: 2, color: '#56cfe1' },
+              areaStyle: { color: 'rgba(86, 207, 225, 0.10)' },
+            },
+          ]),
+      { name: 'MA5', type: 'line', data: ma5, showSymbol: false, smooth: true, lineStyle: { width: 1.5, color: '#f7b267' } },
+      { name: 'MA10', type: 'line', data: ma10, showSymbol: false, smooth: true, lineStyle: { width: 1.5, color: '#ffd166' } },
+      { name: 'MA20', type: 'line', data: ma20, showSymbol: false, smooth: true, lineStyle: { width: 1.5, color: '#9b5de5' } },
+      { name: 'MA60', type: 'line', data: ma60, showSymbol: false, smooth: true, lineStyle: { width: 1.5, color: '#8d99ae' } },
+      { name: 'BOLL U', type: 'line', data: boll.map((item) => item.upper), showSymbol: false, smooth: true, lineStyle: { width: 1, type: 'dashed', color: '#3aa0ff' } },
+      { name: 'BOLL M', type: 'line', data: boll.map((item) => item.mid), showSymbol: false, smooth: true, lineStyle: { width: 1, type: 'dashed', color: '#3aa0ff' } },
+      { name: 'BOLL L', type: 'line', data: boll.map((item) => item.lower), showSymbol: false, smooth: true, lineStyle: { width: 1, type: 'dashed', color: '#3aa0ff' } },
+      {
+        name: 'Volume',
         type: 'bar',
-        data: top.map((item) => item.importance),
-        barWidth: 14,
-        itemStyle: { color: '#7c5cff' },
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: volumeData,
+        barWidth: '60%',
       },
+      {
+        name: 'Volume MA',
+        type: 'line',
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: calcMA(history.value.map((item) => item.volume), 20),
+        showSymbol: false,
+        smooth: true,
+        lineStyle: { width: 1.2, color: '#56cfe1' },
+      },
+      ...(indicatorMode.value === 'macd'
+        ? [
+            {
+              name: 'MACD',
+              type: 'bar',
+              xAxisIndex: 2,
+              yAxisIndex: 2,
+              data: macd.macd.map((value) => ({ value, itemStyle: { color: value >= 0 ? '#00c087' : '#f6465d' } })),
+              barWidth: '60%',
+            },
+            {
+              name: 'Signal',
+              type: 'line',
+              xAxisIndex: 2,
+              yAxisIndex: 2,
+              data: macd.dea,
+              showSymbol: false,
+              smooth: true,
+              lineStyle: { width: 1.5, color: '#f7b267' },
+            },
+          ]
+        : [
+            {
+              name: 'RSI',
+              type: 'line',
+              xAxisIndex: 2,
+              yAxisIndex: 2,
+              data: rsi,
+              showSymbol: false,
+              smooth: true,
+              lineStyle: { width: 1.5, color: '#ff9f1c' },
+            },
+            {
+              name: 'RSI 70',
+              type: 'line',
+              xAxisIndex: 2,
+              yAxisIndex: 2,
+              data: Array(history.value.length).fill(70),
+              showSymbol: false,
+              lineStyle: { width: 1, type: 'dashed', color: '#f6465d' },
+            },
+            {
+              name: 'RSI 30',
+              type: 'line',
+              xAxisIndex: 2,
+              yAxisIndex: 2,
+              data: Array(history.value.length).fill(30),
+              showSymbol: false,
+              lineStyle: { width: 1, type: 'dashed', color: '#00c087' },
+            },
+          ]),
     ],
   })
 }
 
-async function loadDashboard() {
-  const [overviewData, historyData, factorsData] = await Promise.all([
-    fetchOverview(),
-    fetchHistory(120),
-    fetchFactors(),
-  ])
-  overview.value = overviewData
-  history.value = historyData
-  factors.value = factorsData
-  renderTrendChart()
-  renderFeatureChart()
+async function loadOverview() {
+  overview.value = await fetchOverview()
+}
+
+async function loadFactors() {
+  factors.value = await fetchFactors()
+}
+
+async function loadHistorySeries() {
+  loadingHistory.value = true
+  try {
+    history.value = await fetchHistory(limitForInterval(selectedInterval.value), selectedInterval.value)
+    renderTrendChart()
+  } finally {
+    loadingHistory.value = false
+  }
 }
 
 async function runPrediction() {
@@ -278,47 +734,69 @@ async function runPrediction() {
   }
 }
 
-onMounted(async () => {
-  await loadDashboard()
-  window.addEventListener('resize', handleResize)
-  await runPrediction()
-})
-
-function handleResize() {
+function resizeChart() {
   trendChart?.resize()
-  featureChart?.resize()
 }
 
-watch([history, factors], () => {
+watch(selectedInterval, () => {
+  loadHistorySeries()
+})
+
+watch([chartMode, indicatorMode], () => {
   renderTrendChart()
-  renderFeatureChart()
+})
+
+watch(history, () => {
+  renderTrendChart()
+}, { deep: true })
+
+onMounted(async () => {
+  await Promise.all([loadOverview(), loadFactors(), loadHistorySeries()])
+  await runPrediction()
+  window.addEventListener('resize', resizeChart)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('resize', resizeChart)
   trendChart?.dispose()
-  featureChart?.dispose()
 })
 </script>
 
 <style scoped>
 .shell {
   min-height: 100vh;
-  padding: 32px;
+  padding: 28px;
   color: #e8eefc;
+  background:
+    radial-gradient(circle at top left, rgba(0, 192, 135, 0.15), transparent 28%),
+    radial-gradient(circle at top right, rgba(86, 207, 225, 0.12), transparent 24%),
+    linear-gradient(180deg, #08111f 0%, #050814 100%);
 }
 
 .hero {
   display: grid;
-  grid-template-columns: 1.5fr 1fr;
-  gap: 24px;
-  margin-bottom: 24px;
-  align-items: stretch;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.hero-copy,
+.hero-stats,
+.panel {
+  background: rgba(8, 14, 26, 0.78);
+  border: 1px solid rgba(120, 145, 180, 0.18);
+  border-radius: 22px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.hero-copy {
+  padding: 24px;
 }
 
 .eyebrow {
   text-transform: uppercase;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.26em;
   color: #7ad7ff;
   font-size: 12px;
   margin-bottom: 12px;
@@ -326,60 +804,81 @@ onBeforeUnmount(() => {
 
 h1 {
   margin: 0;
-  font-size: clamp(2.2rem, 4vw, 4.6rem);
+  font-size: clamp(2.2rem, 4vw, 4.8rem);
   line-height: 1.02;
-  max-width: 12ch;
+  max-width: 14ch;
 }
 
 p {
-  max-width: 62ch;
-  color: rgba(232, 238, 252, 0.76);
+  max-width: 68ch;
+  color: rgba(232, 238, 252, 0.74);
   line-height: 1.7;
 }
 
-.status-card,
-.panel {
-  background: rgba(8, 14, 26, 0.7);
-  border: 1px solid rgba(120, 145, 180, 0.2);
-  border-radius: 20px;
-  backdrop-filter: blur(18px);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
 }
 
-.status-card :deep(.el-card__body) {
-  padding: 24px;
+.badge {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(120, 145, 180, 0.18);
+  color: #dbe7f6;
+  font-size: 12px;
 }
 
-.status-grid {
+.hero-stats {
   display: grid;
-  gap: 18px;
+  gap: 12px;
+  padding: 18px;
 }
 
-.status-label {
+.stat-card {
+  padding: 18px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(18, 26, 44, 0.96), rgba(12, 18, 32, 0.92));
+  border: 1px solid rgba(120, 145, 180, 0.14);
+}
+
+.stat-card span,
+.summary-chip span,
+.snapshot-item span,
+.metric-row span,
+.mini-card span,
+.rank-item span {
+  display: block;
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(232, 238, 252, 0.56);
+  color: rgba(232, 238, 252, 0.54);
 }
 
-.status-value {
-  margin-top: 8px;
+.stat-card strong {
+  display: block;
+  margin-top: 10px;
   font-size: 1.6rem;
-  font-weight: 700;
 }
 
-.positive { color: #42d392; }
-.negative { color: #ff6b6b; }
-
-.grid {
+.workspace {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 24px;
+  gap: 20px;
 }
 
 .panel {
   padding: 20px;
-  grid-column: span 6;
+}
+
+.chart-panel {
+  grid-column: span 8;
+}
+
+.side-panel {
+  grid-column: span 4;
 }
 
 .panel-wide {
@@ -391,41 +890,146 @@ p {
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
-.panel-head h2 {
+.panel-head h2,
+.panel-head h3 {
   margin: 0;
-  font-size: 1.1rem;
 }
 
-.panel-head span {
+.panel-head span,
+.subline {
   color: rgba(232, 238, 252, 0.56);
   font-size: 0.9rem;
 }
 
-.chart {
-  width: 100%;
-  height: 420px;
+.chart-head {
+  align-items: flex-start;
 }
 
-.small-chart {
-  height: 320px;
+.chart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.interval-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.interval-btn {
+  border: 1px solid rgba(120, 145, 180, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+  color: #dce7f5;
+  border-radius: 10px;
+  padding: 7px 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.interval-btn:hover,
+.interval-btn.active {
+  background: linear-gradient(180deg, rgba(0, 192, 135, 0.18), rgba(0, 192, 135, 0.06));
+  border-color: rgba(0, 192, 135, 0.35);
+  color: #ffffff;
+}
+
+.mode-group :deep(.el-radio-button__inner) {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(120, 145, 180, 0.18);
+  color: #dce7f5;
+}
+
+.mode-group :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: #00c087;
+  border-color: #00c087;
+  color: #04111f;
+  box-shadow: none;
+}
+
+.chart-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.summary-chip {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(120, 145, 180, 0.12);
+}
+
+.summary-chip strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.02rem;
+}
+
+.trend-chart {
+  width: 100%;
+  height: 760px;
+}
+
+.snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.snapshot-item,
+.metric-row {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(120, 145, 180, 0.12);
+}
+
+.snapshot-item strong,
+.metric-row strong,
+.mini-card strong,
+.rank-item strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1rem;
+}
+
+.mini-metrics {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.panel-inner {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(120, 145, 180, 0.14);
+}
+
+.compact {
+  margin-bottom: 12px;
 }
 
 .controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 18px;
+  display: grid;
+  gap: 10px;
 }
 
 .control {
-  min-width: 150px;
-  flex: 1;
+  width: 100%;
+}
+
+.predict-btn {
+  width: 100%;
 }
 
 .prediction-box {
+  margin-top: 14px;
   padding: 18px;
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(46, 59, 92, 0.32), rgba(14, 19, 34, 0.72));
@@ -459,31 +1063,49 @@ p {
   padding: 10px 12px;
 }
 
+.factor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.factor-card {
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(120, 145, 180, 0.12);
+}
+
+.rank-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.rank-item {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.two-col {
+  grid-template-columns: 1fr 1fr;
+}
+
 .mini-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .mini-card {
   padding: 14px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.mini-card span {
-  display: block;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(232, 238, 252, 0.56);
-}
-
-.mini-card strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 1.05rem;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .notes {
@@ -493,7 +1115,7 @@ p {
   margin-top: 18px;
 }
 
-.notes div {
+.notes > div {
   padding: 16px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
@@ -503,13 +1125,29 @@ p {
   margin-bottom: 0;
 }
 
-@media (max-width: 1024px) {
-  .hero {
+.positive {
+  color: #00c087;
+}
+
+.negative {
+  color: #f6465d;
+}
+
+@media (max-width: 1200px) {
+  .hero,
+  .workspace,
+  .factor-grid {
     grid-template-columns: 1fr;
   }
 
-  .panel {
-    grid-column: span 12;
+  .chart-panel,
+  .side-panel,
+  .panel-wide {
+    grid-column: span 1;
+  }
+
+  .chart-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -518,14 +1156,20 @@ p {
     padding: 16px;
   }
 
-  .metrics,
-  .mini-grid,
-  .notes {
+  .trend-chart {
+    height: 640px;
+  }
+
+  .chart-summary,
+  .notes,
+  .two-col,
+  .snapshot-grid,
+  .metrics {
     grid-template-columns: 1fr;
   }
 
-  .chart {
-    height: 320px;
+  .chart-actions {
+    justify-content: flex-start;
   }
 }
 </style>

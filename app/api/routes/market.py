@@ -18,8 +18,8 @@ def get_db():
 
 
 @router.get("/btc/history", response_model=list[HistoryPoint])
-def btc_history(limit: int = 365, db: Session = Depends(get_db)):
-    return get_price_history(db, symbol="BTC", limit=limit)
+def btc_history(limit: int = 365, bar: str = "1D", db: Session = Depends(get_db)):
+    return get_price_history(db, symbol="BTC", limit=limit, bar=bar)
 
 
 @router.get("/market/overview", response_model=MarketOverview)

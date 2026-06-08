@@ -4,3 +4,4 @@ __pycache__/
 cryptosight.db
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo

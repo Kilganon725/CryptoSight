@@ -7,7 +7,75 @@ import pandas as pd
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models.entities import CryptoPrice, MacroIndicator, SentimentData
+from app.services.live_sources import analyze_text_records, fetch_okx_candles, fetch_okx_ticker, fetch_reddit_posts, fetch_x_recent_posts
+
+settings = get_settings()
+
+
+def _store_crypto_rows(db: Session, symbol: str, rows: list[dict]) -> int:
+    inserted = 0
+    for row in rows:
+        exists = (
+            db.query(CryptoPrice)
+            .filter(CryptoPrice.symbol == symbol, CryptoPrice.ts == row["ts"])
+            .first()
+        )
+        if exists:
+            continue
+        db.add(
+            CryptoPrice(
+                symbol=symbol,
+                market="spot",
+                ts=row["ts"],
+                open=row["open"],
+                high=row["high"],
+                low=row["low"],
+                close=row["close"],
+                volume=row["volume"],
+                market_cap=row.get("market_cap"),
+                source=row.get("source", "okx"),
+            )
+        )
+        inserted += 1
+    if inserted:
+        db.commit()
+    return inserted
+
+
+def _store_sentiment_rows(db: Session, symbol: str, rows: list[dict]) -> int:
+    inserted = 0
+    for row in rows:
+        exists = (
+            db.query(SentimentData)
+            .filter(
+                SentimentData.platform == row["platform"],
+                SentimentData.symbol == symbol,
+                SentimentData.ts == row["ts"],
+                SentimentData.raw_text == row.get("text", ""),
+            )
+            .first()
+        )
+        if exists:
+            continue
+        db.add(
+            SentimentData(
+                platform=row["platform"],
+                symbol=symbol,
+                ts=row["ts"],
+                positive=row["positive"],
+                neutral=row["neutral"],
+                negative=row["negative"],
+                sentiment_score=row["sentiment_score"],
+                raw_text=row.get("text", ""),
+                source=row.get("source", row["platform"]),
+            )
+        )
+        inserted += 1
+    if inserted:
+        db.commit()
+    return inserted
 
 
 def seed_demo_data(db: Session, symbol: str = "BTC", days: int = 365) -> None:
@@ -67,8 +135,72 @@ def seed_demo_data(db: Session, symbol: str = "BTC", days: int = 365) -> None:
     db.commit()
 
 
-def get_price_history(db: Session, symbol: str = "BTC", limit: int = 365) -> list[dict]:
-    seed_demo_data(db, symbol=symbol, days=max(limit, 365))
+def sync_okx_market_data(db: Session, symbol: str = "BTC", inst_id: str | None = None, limit: int = 365) -> dict:
+    inst_id = inst_id or settings.okx_instrument_id
+    try:
+        candles = fetch_okx_candles(inst_id=inst_id, bar=settings.okx_bar, limit=limit)
+        inserted = _store_crypto_rows(db, symbol=symbol, rows=candles)
+        ticker = fetch_okx_ticker(inst_id=inst_id)
+        return {
+            "ok": True,
+            "source": "okx",
+            "inst_id": ticker["inst_id"],
+            "candles_fetched": len(candles),
+            "candles_inserted": inserted,
+            "ticker": ticker,
+        }
+    except Exception as exc:
+        return {"ok": False, "source": "okx", "error": str(exc)}
+
+
+def fetch_okx_history(symbol: str = "BTC", inst_id: str | None = None, bar: str | None = None, limit: int = 365) -> list[dict]:
+    try:
+        candles = fetch_okx_candles(inst_id=inst_id or settings.okx_instrument_id, bar=bar or settings.okx_bar, limit=limit)
+        return [
+            {
+                "ts": row["ts"],
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+                "volume": row["volume"],
+                "market_cap": row.get("market_cap"),
+            }
+            for row in candles
+        ]
+    except Exception:
+        return []
+
+
+def sync_social_sentiment(db: Session, symbol: str = "BTC") -> dict:
+    results: dict[str, dict] = {}
+    twitter_records = fetch_x_recent_posts()
+    twitter_analyzed = analyze_text_records([{**record, "source": "x"} for record in twitter_records])
+    results["twitter"] = {
+        "fetched": len(twitter_analyzed),
+        "inserted": _store_sentiment_rows(db, symbol, twitter_analyzed),
+    }
+
+    reddit_records = fetch_reddit_posts()
+    reddit_analyzed = analyze_text_records([{**record, "source": "reddit"} for record in reddit_records])
+    results["reddit"] = {
+        "fetched": len(reddit_analyzed),
+        "inserted": _store_sentiment_rows(db, symbol, reddit_analyzed),
+    }
+    return results
+
+
+def get_price_history(db: Session, symbol: str = "BTC", limit: int = 365, bar: str | None = None) -> list[dict]:
+    bar = bar or settings.okx_bar
+    if settings.live_data_enabled:
+        live_rows = fetch_okx_history(symbol=symbol, bar=bar, limit=limit)
+        if live_rows:
+            if bar == settings.okx_bar:
+                # Keep the default daily series persisted for model training and thesis figures.
+                sync_okx_market_data(db, symbol=symbol, limit=max(limit, 365), inst_id=settings.okx_instrument_id)
+            return live_rows
+    if db.query(CryptoPrice).filter(CryptoPrice.symbol == symbol).count() == 0:
+        seed_demo_data(db, symbol=symbol, days=max(limit, 365))
     rows = (
         db.query(CryptoPrice)
         .filter(CryptoPrice.symbol == symbol)
@@ -92,7 +224,9 @@ def get_price_history(db: Session, symbol: str = "BTC", limit: int = 365) -> lis
 
 
 def get_market_overview(db: Session, symbol: str = "BTC") -> dict:
-    seed_demo_data(db, symbol=symbol, days=365)
+    live_snapshot = sync_okx_market_data(db, symbol=symbol, limit=10) if settings.live_data_enabled else {"ok": False}
+    if db.query(CryptoPrice).filter(CryptoPrice.symbol == symbol).count() == 0:
+        seed_demo_data(db, symbol=symbol, days=365)
     row = (
         db.query(CryptoPrice)
         .filter(CryptoPrice.symbol == symbol)
@@ -107,6 +241,21 @@ def get_market_overview(db: Session, symbol: str = "BTC") -> dict:
         .first()
     )
     change_24h = ((row.close - prev.close) / prev.close * 100) if row and prev else 0.0
+    if live_snapshot.get("ok") and live_snapshot.get("ticker"):
+        ticker = live_snapshot["ticker"]
+        current_price = ticker["last"]
+        change_24h = ((ticker["last"] - ticker["open24h"]) / ticker["open24h"] * 100) if ticker["open24h"] else change_24h
+        volume_24h = ticker["vol24h"]
+        market_cap = row.market_cap if row else None
+        as_of = ticker["ts"]
+        return {
+            "symbol": symbol,
+            "current_price": current_price,
+            "change_24h": change_24h,
+            "volume_24h": volume_24h,
+            "market_cap": market_cap,
+            "as_of": as_of,
+        }
     return {
         "symbol": symbol,
         "current_price": row.close,
@@ -127,7 +276,10 @@ def get_macro_data(db: Session) -> list[dict]:
 
 
 def get_sentiment_data(db: Session) -> list[dict]:
-    seed_demo_data(db)
+    if settings.live_data_enabled:
+        sync_social_sentiment(db)
+    if db.query(SentimentData).count() == 0:
+        seed_demo_data(db)
     rows = db.query(SentimentData).order_by(desc(SentimentData.ts)).limit(500).all()
     return [
         {
@@ -137,6 +289,7 @@ def get_sentiment_data(db: Session) -> list[dict]:
             "neutral": r.neutral,
             "negative": r.negative,
             "sentiment_score": r.sentiment_score,
+            "raw_text": r.raw_text,
         }
         for r in reversed(rows)
     ]

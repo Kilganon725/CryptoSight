@@ -31,10 +31,28 @@ For MySQL:
 export DATABASE_URL='mysql+pymysql://user:password@127.0.0.1:3306/cryptosight?charset=utf8mb4'
 ```
 
+### Real data sources
+
+Live OKX market data is enabled by default. If you register in the US region, set the OKX base URL to the US domain:
+
+```bash
+export OKX_BASE_URL='https://us.okx.com'
+```
+
+Optional social search configuration:
+
+```bash
+export X_BEARER_TOKEN='your_x_api_bearer_token'
+export REDDIT_CLIENT_ID='your_reddit_client_id'
+export REDDIT_CLIENT_SECRET='your_reddit_client_secret'
+```
+
+If X or Reddit credentials are missing, the backend keeps working and falls back to local/demo sentiment rows.
+
 ### Key endpoints
 
 - `GET /api/health`
-- `GET /api/btc/history`
+- `GET /api/btc/history?bar=1H&limit=240`
 - `GET /api/market/overview`
 - `GET /api/macro`
 - `GET /api/sentiment`
@@ -42,6 +60,8 @@ export DATABASE_URL='mysql+pymysql://user:password@127.0.0.1:3306/cryptosight?ch
 - `POST /api/predict`
 - `POST /api/train`
 - `GET /api/model-performance`
+- `POST /api/ingest/live`
+- `GET /api/live/okx/ticker`
 
 ## Frontend
 

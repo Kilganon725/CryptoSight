@@ -4,6 +4,7 @@ sqlalchemy>=2.0
 pydantic>=2.7
 pymysql>=1.1
 httpx2>=2.3
+requests>=2.32
 pandas>=2.2
 numpy>=1.26
 scikit-learn>=1.5

@@ -8,8 +8,8 @@ export async function fetchOverview() {
   return data
 }
 
-export async function fetchHistory(limit = 120) {
-  const { data } = await client.get<HistoryPoint[]>('/api/btc/history', { params: { limit } })
+export async function fetchHistory(limit = 120, bar = '1D') {
+  const { data } = await client.get<HistoryPoint[]>('/api/btc/history', { params: { limit, bar } })
   return data
 }
 
