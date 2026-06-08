@@ -9,9 +9,24 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.entities import CryptoPrice, MacroIndicator, SentimentData
-from app.services.live_sources import analyze_text_records, fetch_okx_candles, fetch_okx_ticker, fetch_reddit_posts, fetch_x_recent_posts
+from app.services.live_sources import (
+    analyze_text_records,
+    fetch_okx_candles,
+    fetch_okx_instrument,
+    fetch_okx_orderbook,
+    fetch_okx_ticker,
+    fetch_okx_trades,
+    fetch_reddit_posts,
+    fetch_x_recent_posts,
+)
 
 settings = get_settings()
+
+
+def _symbol_from_inst_id(inst_id: str | None, fallback: str = "BTC") -> str:
+    if not inst_id:
+        return fallback
+    return inst_id.split("-")[0].upper()
 
 
 def _store_crypto_rows(db: Session, symbol: str, rows: list[dict]) -> int:
@@ -136,7 +151,7 @@ def seed_demo_data(db: Session, symbol: str = "BTC", days: int = 365) -> None:
 
 
 def sync_okx_market_data(db: Session, symbol: str = "BTC", inst_id: str | None = None, limit: int = 365) -> dict:
-    inst_id = inst_id or settings.okx_instrument_id
+    inst_id = inst_id or f"{symbol.upper()}-USDT"
     try:
         candles = fetch_okx_candles(inst_id=inst_id, bar=settings.okx_bar, limit=limit)
         inserted = _store_crypto_rows(db, symbol=symbol, rows=candles)
@@ -155,7 +170,7 @@ def sync_okx_market_data(db: Session, symbol: str = "BTC", inst_id: str | None =
 
 def fetch_okx_history(symbol: str = "BTC", inst_id: str | None = None, bar: str | None = None, limit: int = 365) -> list[dict]:
     try:
-        candles = fetch_okx_candles(inst_id=inst_id or settings.okx_instrument_id, bar=bar or settings.okx_bar, limit=limit)
+        candles = fetch_okx_candles(inst_id=inst_id or f"{symbol.upper()}-USDT", bar=bar or settings.okx_bar, limit=limit)
         return [
             {
                 "ts": row["ts"],
@@ -168,6 +183,27 @@ def fetch_okx_history(symbol: str = "BTC", inst_id: str | None = None, bar: str 
             }
             for row in candles
         ]
+    except Exception:
+        return []
+
+
+def get_okx_instrument(inst_id: str) -> dict:
+    try:
+        return fetch_okx_instrument(inst_id=inst_id)
+    except Exception as exc:
+        return {"inst_id": inst_id, "error": str(exc)}
+
+
+def get_okx_orderbook(inst_id: str, depth: int = 20) -> dict:
+    try:
+        return fetch_okx_orderbook(inst_id=inst_id, depth=depth)
+    except Exception as exc:
+        return {"inst_id": inst_id, "error": str(exc), "asks": [], "bids": []}
+
+
+def get_okx_trades(inst_id: str, limit: int = 20) -> list[dict]:
+    try:
+        return fetch_okx_trades(inst_id=inst_id, limit=limit)
     except Exception:
         return []
 
@@ -190,14 +226,15 @@ def sync_social_sentiment(db: Session, symbol: str = "BTC") -> dict:
     return results
 
 
-def get_price_history(db: Session, symbol: str = "BTC", limit: int = 365, bar: str | None = None) -> list[dict]:
+def get_price_history(db: Session, symbol: str = "BTC", limit: int = 365, bar: str | None = None, inst_id: str | None = None) -> list[dict]:
     bar = bar or settings.okx_bar
+    inst_id = inst_id or f"{symbol.upper()}-USDT"
     if settings.live_data_enabled:
-        live_rows = fetch_okx_history(symbol=symbol, bar=bar, limit=limit)
+        live_rows = fetch_okx_history(symbol=symbol, inst_id=inst_id, bar=bar, limit=limit)
         if live_rows:
             if bar == settings.okx_bar:
                 # Keep the default daily series persisted for model training and thesis figures.
-                sync_okx_market_data(db, symbol=symbol, limit=max(limit, 365), inst_id=settings.okx_instrument_id)
+                sync_okx_market_data(db, symbol=symbol, limit=max(limit, 365), inst_id=inst_id)
             return live_rows
     if db.query(CryptoPrice).filter(CryptoPrice.symbol == symbol).count() == 0:
         seed_demo_data(db, symbol=symbol, days=max(limit, 365))
@@ -223,8 +260,9 @@ def get_price_history(db: Session, symbol: str = "BTC", limit: int = 365, bar: s
     ]
 
 
-def get_market_overview(db: Session, symbol: str = "BTC") -> dict:
-    live_snapshot = sync_okx_market_data(db, symbol=symbol, limit=10) if settings.live_data_enabled else {"ok": False}
+def get_market_overview(db: Session, symbol: str = "BTC", inst_id: str | None = None) -> dict:
+    inst_id = inst_id or f"{symbol.upper()}-USDT"
+    live_snapshot = sync_okx_market_data(db, symbol=symbol, limit=10, inst_id=inst_id) if settings.live_data_enabled else {"ok": False}
     if db.query(CryptoPrice).filter(CryptoPrice.symbol == symbol).count() == 0:
         seed_demo_data(db, symbol=symbol, days=365)
     row = (
@@ -249,8 +287,8 @@ def get_market_overview(db: Session, symbol: str = "BTC") -> dict:
         market_cap = row.market_cap if row else None
         as_of = ticker["ts"]
         return {
-            "symbol": symbol,
-            "current_price": current_price,
+        "symbol": symbol,
+        "current_price": current_price,
             "change_24h": change_24h,
             "volume_24h": volume_24h,
             "market_cap": market_cap,
@@ -293,3 +331,11 @@ def get_sentiment_data(db: Session) -> list[dict]:
         }
         for r in reversed(rows)
     ]
+
+
+def get_market_terminal_snapshot(inst_id: str) -> dict:
+    return {
+        "instrument": get_okx_instrument(inst_id),
+        "orderbook": get_okx_orderbook(inst_id),
+        "trades": get_okx_trades(inst_id),
+    }

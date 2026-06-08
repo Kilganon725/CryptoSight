@@ -21,8 +21,9 @@ def get_db():
 
 
 @router.get("/factors")
-def factors(db: Session = Depends(get_db)):
-    prices = pd.DataFrame(get_price_history(db, symbol="BTC", limit=365))
+def factors(symbol: str = "BTC", inst_id: str | None = None, db: Session = Depends(get_db)):
+    inst_id = inst_id or f"{symbol.upper()}-USDT"
+    prices = pd.DataFrame(get_price_history(db, symbol=symbol, limit=365, inst_id=inst_id))
     macro = pd.DataFrame(get_macro_data(db))
     sentiment = pd.DataFrame(get_sentiment_data(db))
 

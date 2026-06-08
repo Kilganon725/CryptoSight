@@ -9,10 +9,13 @@ Base path: `/api`
 
 ## Market Data
 
-- `GET /api/btc/history?limit=365&bar=1H`
-- `GET /api/market/overview`
+- `GET /api/btc/history?inst_id=BTC-USDT&limit=365&bar=1H`
+- `GET /api/market/overview?inst_id=BTC-USDT`
 - `GET /api/macro`
 - `GET /api/sentiment`
+- `GET /api/market/instrument?inst_id=BTC-USDT`
+- `GET /api/market/orderbook?inst_id=BTC-USDT&depth=20`
+- `GET /api/market/trades?inst_id=BTC-USDT&limit=20`
 
 Supported `bar` values for OKX K-line requests include:
 

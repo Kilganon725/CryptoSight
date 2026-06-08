@@ -17,7 +17,7 @@
 
       <div class="hero-stats">
         <div class="stat-card">
-          <span>BTC Price</span>
+          <span>{{ selectedPairLabel }} Price</span>
           <strong>{{ formatPrice(overview?.current_price ?? latestClose) }}</strong>
         </div>
         <div class="stat-card">
@@ -35,13 +35,16 @@
       <section class="panel chart-panel">
         <div class="panel-head chart-head">
           <div>
-            <h2>BTC/USDT Chart</h2>
+            <h2>{{ selectedPairLabel }} Chart</h2>
             <div class="subline">
               {{ selectedIntervalLabel }} · {{ chartTypeLabel }} · {{ indicatorLabel }}
             </div>
           </div>
 
           <div class="chart-actions">
+            <el-select v-model="selectedPair" size="small" class="pair-select">
+              <el-option v-for="pair in pairOptions" :key="pair.value" :label="pair.label" :value="pair.value" />
+            </el-select>
             <div class="interval-group">
               <button
                 v-for="item in intervalOptions"
@@ -98,7 +101,7 @@
 
       <aside class="panel side-panel">
         <div class="panel-head">
-          <h2>Market Snapshot</h2>
+          <h2>{{ selectedPairLabel }} Snapshot</h2>
           <span>Live feed</span>
         </div>
 
@@ -137,6 +140,44 @@
           <div class="metric-row">
             <span>Model</span>
             <strong>{{ prediction?.model_name ?? 'xgboost' }}</strong>
+          </div>
+        </div>
+
+        <div class="orderbook-section">
+          <div class="panel-head compact">
+            <h3>Order Book</h3>
+            <span>{{ instrument?.tick_sz ? `tick ${instrument.tick_sz}` : 'live' }}</span>
+          </div>
+          <div class="orderbook-grid">
+            <div class="orderbook-column asks">
+              <div class="orderbook-title">Asks</div>
+              <div v-for="level in askLevels" :key="`ask-${level.price}-${level.size}`" class="orderbook-row">
+                <span class="price">{{ formatPrice(level.price) }}</span>
+                <span class="size">{{ formatAmount(level.size) }}</span>
+              </div>
+            </div>
+            <div class="orderbook-column bids">
+              <div class="orderbook-title">Bids</div>
+              <div v-for="level in bidLevels" :key="`bid-${level.price}-${level.size}`" class="orderbook-row">
+                <span class="price">{{ formatPrice(level.price) }}</span>
+                <span class="size">{{ formatAmount(level.size) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="trade-section">
+          <div class="panel-head compact">
+            <h3>Recent Trades</h3>
+            <span>{{ recentTrades.length }}</span>
+          </div>
+          <div class="trade-list">
+            <div v-for="trade in recentTrades" :key="`${trade.trade_id}-${trade.ts}`" class="trade-row" :class="trade.side">
+              <span class="time">{{ formatTradeTime(trade.ts) }}</span>
+              <span class="side">{{ trade.side }}</span>
+              <span class="price">{{ formatPrice(trade.price) }}</span>
+              <span class="size">{{ formatAmount(trade.size) }}</span>
+            </div>
           </div>
         </div>
 
@@ -245,12 +286,26 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
-import { fetchFactors, fetchHistory, fetchOverview, predict } from './api'
-import type { FactorPayload, HistoryPoint, MarketOverview, PredictionResponse } from './types'
+import { fetchFactors, fetchHistory, fetchInstrument, fetchOrderbook, fetchOverview, fetchTrades, predict } from './api'
+import type {
+  FactorPayload,
+  HistoryPoint,
+  MarketOverview,
+  OKXInstrument,
+  OrderbookSnapshot,
+  PredictionResponse,
+  RecentTrade,
+} from './types'
 
 type IntervalKey = '1m' | '5m' | '15m' | '1H' | '4H' | '1D' | '1W' | '1M'
 type ChartMode = 'candlestick' | 'line'
 type IndicatorMode = 'macd' | 'rsi'
+type PairKey = 'BTC-USDT' | 'ETH-USDT'
+
+const pairOptions: Array<{ label: string; value: PairKey; symbol: 'BTC' | 'ETH' }> = [
+  { label: 'BTC/USDT', value: 'BTC-USDT', symbol: 'BTC' },
+  { label: 'ETH/USDT', value: 'ETH-USDT', symbol: 'ETH' },
+]
 
 const intervalOptions: Array<{ label: string; value: IntervalKey; limit: number }> = [
   { label: '1m', value: '1m', limit: 300 },
@@ -266,7 +321,11 @@ const intervalOptions: Array<{ label: string; value: IntervalKey; limit: number 
 const overview = ref<MarketOverview | null>(null)
 const history = ref<HistoryPoint[]>([])
 const factors = ref<FactorPayload | null>(null)
+const instrument = ref<OKXInstrument | null>(null)
+const orderbook = ref<OrderbookSnapshot | null>(null)
+const recentTrades = ref<RecentTrade[]>([])
 const prediction = ref<PredictionResponse | null>(null)
+const selectedPair = ref<PairKey>('BTC-USDT')
 const selectedInterval = ref<IntervalKey>('1H')
 const chartMode = ref<ChartMode>('candlestick')
 const indicatorMode = ref<IndicatorMode>('macd')
@@ -277,11 +336,27 @@ const predicting = ref(false)
 
 const trendEl = ref<HTMLDivElement | null>(null)
 let trendChart: echarts.ECharts | null = null
+let feedTimer: number | null = null
 
 const changeClass = computed(() => {
   const change = overview.value?.change_24h ?? 0
   return change >= 0 ? 'positive' : 'negative'
 })
+
+const selectedPairLabel = computed(() => pairOptions.find((item) => item.value === selectedPair.value)?.label ?? selectedPair.value)
+const selectedPairSymbol = computed(() => pairOptions.find((item) => item.value === selectedPair.value)?.symbol ?? 'BTC')
+const priceDecimals = computed(() => {
+  const tick = instrument.value?.tick_sz
+  if (!tick || !tick.includes('.')) return 2
+  return Math.min(8, tick.split('.')[1].replace(/0+$/, '').length || 2)
+})
+const orderbookDepth = computed(() => {
+  const asks = orderbook.value?.asks ?? []
+  const bids = orderbook.value?.bids ?? []
+  return Math.min(8, Math.max(asks.length, bids.length))
+})
+const askLevels = computed(() => (orderbook.value?.asks ?? []).slice(0, orderbookDepth.value))
+const bidLevels = computed(() => (orderbook.value?.bids ?? []).slice(0, orderbookDepth.value))
 
 const latestCandle = computed(() => history.value.at(-1) ?? null)
 const previousCandle = computed(() => history.value.length > 1 ? history.value.at(-2) ?? null : null)
@@ -343,9 +418,14 @@ function formatVolume(value?: number | null) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)
 }
 
-function formatPrice(value?: number | null) {
+function formatAmount(value?: number | null) {
   if (value === null || value === undefined || Number.isNaN(value)) return '--'
-  return `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}`
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(value)
+}
+
+function formatPrice(value?: number | null, decimals = priceDecimals.value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '--'
+  return `$${new Intl.NumberFormat('en-US', { maximumFractionDigits: decimals }).format(value)}`
 }
 
 function formatChange(value?: number | null) {
@@ -361,6 +441,16 @@ function formatDateTime(value: string) {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+function formatTradeTime(value: string) {
+  const date = new Date(value)
+  return new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   }).format(date)
 }
@@ -704,17 +794,24 @@ function renderTrendChart() {
 }
 
 async function loadOverview() {
-  overview.value = await fetchOverview()
+  overview.value = await fetchOverview(selectedPair.value)
 }
 
 async function loadFactors() {
-  factors.value = await fetchFactors()
+  const symbol = selectedPairSymbol.value
+  factors.value = await fetchFactors(symbol, selectedPair.value)
+}
+
+async function loadMarketMeta() {
+  instrument.value = await fetchInstrument(selectedPair.value)
+  orderbook.value = await fetchOrderbook(selectedPair.value, 20)
+  recentTrades.value = await fetchTrades(selectedPair.value, 20)
 }
 
 async function loadHistorySeries() {
   loadingHistory.value = true
   try {
-    history.value = await fetchHistory(limitForInterval(selectedInterval.value), selectedInterval.value)
+    history.value = await fetchHistory(limitForInterval(selectedInterval.value), selectedInterval.value, selectedPair.value)
     renderTrendChart()
   } finally {
     loadingHistory.value = false
@@ -724,7 +821,7 @@ async function loadHistorySeries() {
 async function runPrediction() {
   predicting.value = true
   try {
-    prediction.value = await predict(modelName.value, horizonDays.value)
+    prediction.value = await predict(modelName.value, horizonDays.value, selectedPairSymbol.value, selectedPair.value)
     ElMessage.success('Prediction updated')
   } catch (error) {
     ElMessage.error('Prediction request failed')
@@ -738,6 +835,10 @@ function resizeChart() {
   trendChart?.resize()
 }
 
+async function refreshLiveFeed() {
+  await Promise.all([loadOverview(), loadMarketMeta()])
+}
+
 watch(selectedInterval, () => {
   loadHistorySeries()
 })
@@ -746,19 +847,28 @@ watch([chartMode, indicatorMode], () => {
   renderTrendChart()
 })
 
+watch(selectedPair, async () => {
+  await Promise.all([loadOverview(), loadFactors(), loadHistorySeries(), loadMarketMeta()])
+  await runPrediction()
+})
+
 watch(history, () => {
   renderTrendChart()
 }, { deep: true })
 
 onMounted(async () => {
-  await Promise.all([loadOverview(), loadFactors(), loadHistorySeries()])
+  await Promise.all([loadOverview(), loadFactors(), loadHistorySeries(), loadMarketMeta()])
   await runPrediction()
   window.addEventListener('resize', resizeChart)
+  feedTimer = window.setInterval(() => {
+    refreshLiveFeed().catch((error) => console.error('Live feed refresh failed', error))
+  }, 15000)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeChart)
   trendChart?.dispose()
+  if (feedTimer) window.clearInterval(feedTimer)
 })
 </script>
 
@@ -915,6 +1025,10 @@ p {
   justify-content: flex-end;
 }
 
+.pair-select {
+  min-width: 150px;
+}
+
 .interval-group {
   display: flex;
   flex-wrap: wrap;
@@ -1003,6 +1117,98 @@ p {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.orderbook-section,
+.trade-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(120, 145, 180, 0.14);
+}
+
+.orderbook-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.orderbook-column {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px;
+}
+
+.orderbook-title {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 252, 0.56);
+  margin-bottom: 10px;
+}
+
+.orderbook-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.orderbook-row .price {
+  font-variant-numeric: tabular-nums;
+}
+
+.orderbook-row .size {
+  color: rgba(232, 238, 252, 0.68);
+  font-variant-numeric: tabular-nums;
+}
+
+.orderbook-column.asks .price {
+  color: #f6465d;
+}
+
+.orderbook-column.bids .price {
+  color: #00c087;
+}
+
+.trade-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.trade-row {
+  display: grid;
+  grid-template-columns: 84px 54px 1fr 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+}
+
+.trade-row.buy .price,
+.trade-row.buy .side {
+  color: #00c087;
+}
+
+.trade-row.sell .price,
+.trade-row.sell .side {
+  color: #f6465d;
+}
+
+.trade-row .time,
+.trade-row .size {
+  color: rgba(232, 238, 252, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-row .price,
+.trade-row .side {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .panel-inner {
@@ -1170,6 +1376,11 @@ p {
 
   .chart-actions {
     justify-content: flex-start;
+  }
+
+  .orderbook-grid,
+  .trade-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

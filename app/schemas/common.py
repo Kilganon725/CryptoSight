@@ -52,6 +52,7 @@ class FactorResult(BaseModel):
 
 class PredictionRequest(BaseModel):
     symbol: str = "BTC"
+    inst_id: str | None = None
     model_name: str = Field(default="xgboost")
     horizon_days: int = Field(default=7, ge=1, le=30)
 

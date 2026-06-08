@@ -21,7 +21,8 @@ def get_db():
 
 @router.post("/predict", response_model=PredictionResponse)
 def predict(payload: PredictionRequest, db: Session = Depends(get_db)):
-    prices = pd.DataFrame(get_price_history(db, symbol=payload.symbol, limit=365))
+    inst_id = payload.inst_id or f"{payload.symbol.upper()}-USDT"
+    prices = pd.DataFrame(get_price_history(db, symbol=payload.symbol, limit=365, inst_id=inst_id))
     if prices.empty:
         raise HTTPException(status_code=404, detail="No price data available")
     result = predict_future(prices, model_name=payload.model_name, horizon_days=payload.horizon_days)
@@ -38,7 +39,8 @@ def predict(payload: PredictionRequest, db: Session = Depends(get_db)):
 
 @router.post("/train", response_model=TrainResponse)
 def train(payload: PredictionRequest, db: Session = Depends(get_db)):
-    prices = pd.DataFrame(get_price_history(db, symbol=payload.symbol, limit=365))
+    inst_id = payload.inst_id or f"{payload.symbol.upper()}-USDT"
+    prices = pd.DataFrame(get_price_history(db, symbol=payload.symbol, limit=365, inst_id=inst_id))
     if prices.empty:
         raise HTTPException(status_code=404, detail="No price data available")
     metrics = compare_models(prices, horizon_days=payload.horizon_days)
@@ -49,8 +51,8 @@ def train(payload: PredictionRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/model-performance", response_model=list[ModelPerformanceItem])
-def model_performance(symbol: str = "BTC", horizon_days: int = 1, db: Session = Depends(get_db)):
-    prices = pd.DataFrame(get_price_history(db, symbol=symbol, limit=365))
+def model_performance(symbol: str = "BTC", inst_id: str | None = None, horizon_days: int = 1, db: Session = Depends(get_db)):
+    prices = pd.DataFrame(get_price_history(db, symbol=symbol, limit=365, inst_id=inst_id or f"{symbol.upper()}-USDT"))
     metrics = compare_models(prices, horizon_days=horizon_days)
     items = []
     for model_name, metric in metrics.items():

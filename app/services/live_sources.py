@@ -92,6 +92,82 @@ def fetch_okx_ticker(inst_id: str | None = None) -> dict[str, Any]:
     }
 
 
+def fetch_okx_instrument(inst_id: str | None = None) -> dict[str, Any]:
+    inst_id = inst_id or settings.okx_instrument_id
+    url = f"{settings.okx_base_url.rstrip('/')}/api/v5/public/instruments"
+    params = {"instType": "SPOT"}
+    response = requests.get(url, params=params, timeout=15)
+    response.raise_for_status()
+    data = response.json().get("data", [])
+    if not data:
+        raise ValueError("OKX instrument response did not include data")
+    row = next((item for item in data if item.get("instId") == inst_id), data[0])
+    return {
+        "inst_id": row.get("instId", inst_id),
+        "base_ccy": row.get("baseCcy"),
+        "quote_ccy": row.get("quoteCcy"),
+        "tick_sz": row.get("tickSz"),
+        "lot_sz": row.get("lotSz"),
+        "min_sz": row.get("minSz"),
+        "ct_val": row.get("ctVal"),
+        "ct_mult": row.get("ctMult"),
+        "state": row.get("state"),
+        "source": "okx",
+    }
+
+
+def fetch_okx_orderbook(inst_id: str | None = None, depth: int = 20) -> dict[str, Any]:
+    inst_id = inst_id or settings.okx_instrument_id
+    url = f"{settings.okx_base_url.rstrip('/')}/api/v5/market/books"
+    params = {"instId": inst_id, "sz": str(max(1, min(int(depth), 400)))}
+    response = requests.get(url, params=params, timeout=15)
+    response.raise_for_status()
+    data = response.json().get("data", [])
+    if not data:
+        raise ValueError("OKX order book response did not include data")
+    row = data[0]
+    asks = [
+        {"price": float(item[0]), "size": float(item[1]), "orders": int(item[3]) if len(item) > 3 else 0}
+        for item in row.get("asks", [])
+    ]
+    bids = [
+        {"price": float(item[0]), "size": float(item[1]), "orders": int(item[3]) if len(item) > 3 else 0}
+        for item in row.get("bids", [])
+    ]
+    return {
+        "inst_id": inst_id,
+        "ts": _utc_from_ms(row.get("ts")),
+        "seq_id": row.get("seqId"),
+        "asks": asks,
+        "bids": bids,
+        "source": "okx",
+    }
+
+
+def fetch_okx_trades(inst_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    inst_id = inst_id or settings.okx_instrument_id
+    url = f"{settings.okx_base_url.rstrip('/')}/api/v5/market/trades"
+    params = {"instId": inst_id, "limit": str(max(1, min(int(limit), 500)))}
+    response = requests.get(url, params=params, timeout=15)
+    response.raise_for_status()
+    rows = response.json().get("data", [])
+    trades: list[dict[str, Any]] = []
+    for row in rows:
+        trades.append(
+            {
+                "inst_id": inst_id,
+                "trade_id": row.get("tradeId"),
+                "price": float(row.get("px", 0.0)),
+                "size": float(row.get("sz", 0.0)),
+                "side": row.get("side"),
+                "ts": _utc_from_ms(row.get("ts")),
+                "source": "okx",
+            }
+        )
+    trades.sort(key=lambda item: item["ts"], reverse=True)
+    return trades
+
+
 def fetch_x_recent_posts(query: str | None = None, max_results: int | None = None) -> list[dict[str, Any]]:
     if not settings.x_bearer_token:
         return []

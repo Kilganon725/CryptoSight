@@ -52,14 +52,17 @@ If X or Reddit credentials are missing, the backend keeps working and falls back
 ### Key endpoints
 
 - `GET /api/health`
-- `GET /api/btc/history?bar=1H&limit=240`
-- `GET /api/market/overview`
+- `GET /api/btc/history?inst_id=BTC-USDT&bar=1H&limit=240`
+- `GET /api/market/overview?inst_id=BTC-USDT`
 - `GET /api/macro`
 - `GET /api/sentiment`
 - `GET /api/factors`
 - `POST /api/predict`
 - `POST /api/train`
 - `GET /api/model-performance`
+- `GET /api/market/instrument?inst_id=BTC-USDT`
+- `GET /api/market/orderbook?inst_id=BTC-USDT&depth=20`
+- `GET /api/market/trades?inst_id=BTC-USDT&limit=20`
 - `POST /api/ingest/live`
 - `GET /api/live/okx/ticker`
 

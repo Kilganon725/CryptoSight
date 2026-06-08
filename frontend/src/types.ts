@@ -7,6 +7,19 @@ export interface MarketOverview {
   as_of: string
 }
 
+export interface OKXInstrument {
+  inst_id: string
+  base_ccy?: string | null
+  quote_ccy?: string | null
+  tick_sz?: string | null
+  lot_sz?: string | null
+  min_sz?: string | null
+  ct_val?: string | null
+  ct_mult?: string | null
+  state?: string | null
+  source?: string
+}
+
 export interface HistoryPoint {
   ts: string
   open: number
@@ -32,4 +45,29 @@ export interface PredictionResponse {
   confidence_score: number
   metrics: Record<string, number>
   as_of: string
+}
+
+export interface OrderbookLevel {
+  price: number
+  size: number
+  orders: number
+}
+
+export interface OrderbookSnapshot {
+  inst_id: string
+  ts: string
+  seq_id?: number | string
+  asks: OrderbookLevel[]
+  bids: OrderbookLevel[]
+  source?: string
+}
+
+export interface RecentTrade {
+  inst_id: string
+  trade_id?: string | number
+  price: number
+  size: number
+  side?: string | null
+  ts: string
+  source?: string
 }
