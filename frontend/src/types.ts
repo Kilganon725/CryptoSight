@@ -71,3 +71,17 @@ export interface RecentTrade {
   ts: string
   source?: string
 }
+
+export interface NewsItem {
+  platform: string
+  ts: string
+  title: string
+  url: string
+  source_name?: string | null
+  summary?: string | null
+  text?: string | null
+  positive: number
+  neutral: number
+  negative: number
+  sentiment_score: number
+}

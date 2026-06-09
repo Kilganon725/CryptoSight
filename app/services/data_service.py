@@ -16,6 +16,7 @@ from app.services.live_sources import (
     fetch_okx_orderbook,
     fetch_okx_ticker,
     fetch_okx_trades,
+    fetch_news_articles,
     fetch_reddit_posts,
     fetch_x_recent_posts,
 )
@@ -223,6 +224,13 @@ def sync_social_sentiment(db: Session, symbol: str = "BTC") -> dict:
         "fetched": len(reddit_analyzed),
         "inserted": _store_sentiment_rows(db, symbol, reddit_analyzed),
     }
+
+    news_records = fetch_news_articles()
+    news_analyzed = analyze_text_records([{**record, "source": "news"} for record in news_records])
+    results["news"] = {
+        "fetched": len(news_analyzed),
+        "inserted": _store_sentiment_rows(db, symbol, news_analyzed),
+    }
     return results
 
 
@@ -330,6 +338,27 @@ def get_sentiment_data(db: Session) -> list[dict]:
             "raw_text": r.raw_text,
         }
         for r in reversed(rows)
+    ]
+
+
+def get_news_data(limit: int = 25) -> list[dict]:
+    records = fetch_news_articles(limit=limit)
+    analyzed = analyze_text_records([{**record, "source": "news"} for record in records])
+    return [
+        {
+            "platform": record["platform"],
+            "ts": record["ts"],
+            "title": record.get("title", ""),
+            "url": record.get("url", ""),
+            "source_name": record.get("source_name", ""),
+            "summary": record.get("summary", ""),
+            "text": record.get("text", ""),
+            "positive": record["positive"],
+            "neutral": record["neutral"],
+            "negative": record["negative"],
+            "sentiment_score": record["sentiment_score"],
+        }
+        for record in analyzed
     ]
 
 

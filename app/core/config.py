@@ -22,6 +22,8 @@ class Settings(BaseModel):
     reddit_search_query: str = os.getenv("REDDIT_SEARCH_QUERY", "bitcoin OR btc OR crypto")
     reddit_search_subreddit: str = os.getenv("REDDIT_SEARCH_SUBREDDIT", "CryptoCurrency")
     reddit_search_limit: int = int(os.getenv("REDDIT_SEARCH_LIMIT", "25"))
+    news_search_query: str = os.getenv("NEWS_SEARCH_QUERY", "(bitcoin OR btc OR crypto) language:english")
+    news_search_limit: int = int(os.getenv("NEWS_SEARCH_LIMIT", "25"))
     live_data_enabled: bool = os.getenv("LIVE_DATA_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
     cors_origins: list[str] = ["*"]
     default_history_limit: int = 365

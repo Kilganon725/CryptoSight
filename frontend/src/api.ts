@@ -4,6 +4,7 @@ import type {
   HistoryPoint,
   MarketOverview,
   OKXInstrument,
+  NewsItem,
   OrderbookSnapshot,
   PredictionResponse,
   RecentTrade,
@@ -38,6 +39,11 @@ export async function fetchOrderbook(inst_id = 'BTC-USDT', depth = 20) {
 
 export async function fetchTrades(inst_id = 'BTC-USDT', limit = 20) {
   const { data } = await client.get<RecentTrade[]>('/api/market/trades', { params: { inst_id, limit } })
+  return data
+}
+
+export async function fetchNews(limit = 25) {
+  const { data } = await client.get<NewsItem[]>('/api/news', { params: { limit } })
   return data
 }
 

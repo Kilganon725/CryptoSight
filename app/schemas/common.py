@@ -43,6 +43,20 @@ class SentimentPoint(BaseModel):
     sentiment_score: float
 
 
+class NewsItem(BaseModel):
+    platform: str
+    ts: datetime
+    title: str
+    url: str
+    source_name: str | None = None
+    summary: str | None = None
+    text: str | None = None
+    positive: float
+    neutral: float
+    negative: float
+    sentiment_score: float
+
+
 class FactorResult(BaseModel):
     correlations: dict[str, Any]
     causality: dict[str, Any]

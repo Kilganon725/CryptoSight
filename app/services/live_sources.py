@@ -266,3 +266,45 @@ def analyze_text_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         sentiment = _sentiment_from_text(record.get("text", ""))
         analyzed.append({**record, **sentiment})
     return analyzed
+
+
+def fetch_news_articles(query: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+    query = query or settings.news_search_query
+    limit = limit or settings.news_search_limit
+    url = "https://api.gdeltproject.org/api/v2/doc/doc"
+    params = {
+        "query": query,
+        "mode": "ArtList",
+        "format": "json",
+        "maxrecords": max(10, min(int(limit), 250)),
+        "sort": "HybridRel",
+    }
+    try:
+        response = requests.get(url, params=params, timeout=20)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return []
+    articles = payload.get("articles", []) or []
+    records: list[dict[str, Any]] = []
+    for article in articles:
+        title = article.get("title", "")
+        summary = article.get("snippet") or article.get("description") or article.get("seendate", "")
+        text = f"{title} {article.get('sourceCountry', '')} {article.get('domain', '')}".strip()
+        published = article.get("seendate") or article.get("datetime")
+        try:
+            ts = datetime.fromisoformat(published.replace("Z", "+00:00")).replace(tzinfo=None) if published else datetime.utcnow()
+        except Exception:
+            ts = datetime.utcnow()
+        records.append(
+            {
+                "platform": "news",
+                "ts": ts,
+                "text": text,
+                "title": title,
+                "url": article.get("url"),
+                "source_name": article.get("sourceCommonName") or article.get("domain"),
+                "summary": summary,
+            }
+        )
+    return records
