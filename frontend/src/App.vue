@@ -285,7 +285,16 @@ import type { FactorPayload, HistoryPoint, MarketOverview, NewsItem, OKXInstrume
 type IntervalKey = '1m' | '5m' | '15m' | '1H' | '4H' | '1D' | '1W' | '1M'
 type ChartMode = 'candlestick' | 'line'
 type IndicatorMode = 'macd' | 'rsi'
-type PairKey = 'BTC-USDT' | 'ETH-USDT'
+type PairKey =
+  | 'BTC-USDT'
+  | 'ETH-USDT'
+  | 'SOL-USDT'
+  | 'XRP-USDT'
+  | 'DOGE-USDT'
+  | 'BNB-USDT'
+  | 'ADA-USDT'
+  | 'LTC-USDT'
+  | 'LINK-USDT'
 type ViewKey = 'market' | 'news' | 'analysis' | 'prediction'
 
 const views: Array<{ label: string; value: ViewKey }> = [
@@ -294,9 +303,16 @@ const views: Array<{ label: string; value: ViewKey }> = [
   { label: 'Analysis', value: 'analysis' },
   { label: 'Prediction', value: 'prediction' },
 ]
-const pairOptions: Array<{ label: string; value: PairKey; symbol: 'BTC' | 'ETH' }> = [
+const pairOptions: Array<{ label: string; value: PairKey; symbol: string }> = [
   { label: 'BTC/USDT', value: 'BTC-USDT', symbol: 'BTC' },
   { label: 'ETH/USDT', value: 'ETH-USDT', symbol: 'ETH' },
+  { label: 'SOL/USDT', value: 'SOL-USDT', symbol: 'SOL' },
+  { label: 'XRP/USDT', value: 'XRP-USDT', symbol: 'XRP' },
+  { label: 'DOGE/USDT', value: 'DOGE-USDT', symbol: 'DOGE' },
+  { label: 'BNB/USDT', value: 'BNB-USDT', symbol: 'BNB' },
+  { label: 'ADA/USDT', value: 'ADA-USDT', symbol: 'ADA' },
+  { label: 'LTC/USDT', value: 'LTC-USDT', symbol: 'LTC' },
+  { label: 'LINK/USDT', value: 'LINK-USDT', symbol: 'LINK' },
 ]
 const intervalOptions: Array<{ label: string; value: IntervalKey; limit: number }> = [
   { label: '1m', value: '1m', limit: 300 },
